@@ -105,7 +105,7 @@
             <tbody>
               @forelse($closed_sessions as $s)
               <tr>
-                <td class="text-white">
+                <td class="text-black">
                   {{ $s->ps_unit->name ?? '-' }}
                   @if(!empty($s->extra_controllers) && $s->extra_controllers > 0)
                     <span class="badge badge-addon badge-glow ms-2">+ Stik ×{{ $s->extra_controllers }}</span>
