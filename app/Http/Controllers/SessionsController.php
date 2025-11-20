@@ -8,6 +8,7 @@ use App\Models\GameSession;   // pakai model yang ada
 use App\Models\Session;
 use Carbon\Carbon;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\DB;
 
 
 
@@ -29,85 +30,127 @@ class SessionsController extends Controller
     }
 
     public function storeFixed(Request $request)
-{
-    // validasi minimal: terima numeric agar bisa 0.5 (30 menit)
-    $data = $request->validate([
-        'ps_unit_id' => 'required|exists:ps_units,id',
-        'start_time' => 'required|date',
-        'hours'      => 'required|numeric|min:0.5', // sebelumnya integer|min:1
-        'extra_controllers' => 'nullable|integer|min:0',
-        'arcade_controllers' => 'nullable|integer|min:0',
-        'payment_method' => 'required|string',
-        'paid_amount' => 'required|numeric|min:0',
-    ]);
+    {
+        $data = $request->validate([
+            'ps_unit_id' => 'required|exists:ps_units,id',
+            'start_time' => 'required|date',
+            'hours'      => 'required|numeric|min:0.5', // bisa desimal (30 menit = 0.5)
+            'extra_controllers' => 'nullable|integer|min:0',
+            'arcade_controllers' => 'nullable|integer|min:0',
+            'payment_method' => 'required|string',
+            'paid_amount' => 'required|numeric|min:0',
+        ]);
 
-    $unit = PSUnit::findOrFail($data['ps_unit_id']);
-    $hourly = (float) $unit->hourly_rate;
+        $unit = \App\Models\PSUnit::findOrFail($data['ps_unit_id']);
+        $hourly = (float) $unit->hourly_rate;
+        $EX_RATE = 10000;
+        $ARC_RATE = 15000;
 
-    $EX_RATE = 10000;
-    $ARC_RATE = 15000;
+        $extraControllers = (int) ($data['extra_controllers'] ?? 0);
+        $arcadeControllers = (int) ($data['arcade_controllers'] ?? 0);
+        $hours = (float) $data['hours'];
 
-    // pastikan numeric (float), karena request memberi string
-    $hours = (float) $data['hours'];
-    $extraControllers = (int) ($data['extra_controllers'] ?? 0);
-    $arcadeControllers = (int) ($data['arcade_controllers'] ?? 0);
+        // hitung effective per jam, lalu bill (boleh jam desimal)
+        $effectiveRatePerHour = $hourly + ($extraControllers * $EX_RATE) + ($arcadeControllers * $ARC_RATE);
 
-    // effective rate per hour
-    $effectiveRatePerHour = $hourly + ($extraControllers * $EX_RATE) + ($arcadeControllers * $ARC_RATE);
-
-    // hitung bill: jika ingin mengikuti peraturan pembulatan 30 menit ke atas per 1000,
-    // ubah logika di sini. Untuk sekarang kita hitung sederhana:
-    if ($hours === 0.5) {
-        // contoh: setengah tarif; jika mau pembulatan, gunakan ceil ke 1000:
-        // $bill = (int) (ceil(($effectiveRatePerHour * 0.5) / 1000) * 1000);
-        $bill = (int) round($effectiveRatePerHour * 0.5); // tanpa pembulatan khusus
-    } else {
+        // jika jam = 0.5 => bill = effectiveRatePerHour * 0.5
         $bill = (int) round($effectiveRatePerHour * $hours);
+
+        // minutes to add (untuk end_time)
+        $minutesToAdd = (int) round($hours * 60);
+
+        // siapkan id session (UUID karena tabel sessions punya id varchar)
+        $sessionId = (string) Str::uuid();
+        $now = Carbon::now();
+
+        DB::beginTransaction();
+        try {
+            // insert ke tabel sessions (pastikan semua kolom non-null di DB diberikan)
+            DB::table('sessions')->insert([
+                'id' => $sessionId,
+                'ps_unit_id' => $unit->id,
+                'start_time' => Carbon::parse($data['start_time'])->format('Y-m-d H:i:s'),
+                'end_time'   => Carbon::parse($data['start_time'])->addMinutes($minutesToAdd)->format('Y-m-d H:i:s'),
+                'minutes'    => $minutesToAdd,
+                'extra_controllers' => $extraControllers,
+                'arcade_controllers' => $arcadeControllers,
+                'bill'       => $bill,
+                'payment_method' => $data['payment_method'],
+                'paid_amount' => (int)$data['paid_amount'],
+                // optional fields — sesuaikan jika tidak ada di DB
+                'user_id' => auth()->id() ?? null,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'payload' => json_encode([
+                    'created_from' => 'web',
+                    'unit' => $unit->name ?? $unit->id,
+                    'hours' => $hours,
+                    'extra_controllers' => $extraControllers,
+                    'arcade_controllers' => $arcadeControllers,
+                ]),
+                'last_activity' => time(), // pastikan kolom ini ada (menghindari error no default)
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+            // buat record sale (penjualan) — sale untuk sesi (product_id = NULL)
+            $saleId = DB::table('sales')->insertGetId([
+                'sold_at' => $now,
+                'total' => $bill,
+                'payment_method' => $data['payment_method'],
+                'paid_amount' => (int)$data['paid_amount'],
+                'note' => 'Sesi '.$unit->name.' - '.$hours.' jam',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+            // buat sale_item untuk sesi (product_id NULL)
+            $description = "Sesi {$unit->name} - {$hours} jam";
+            DB::table('sale_items')->insert([
+                'sale_id' => $saleId,
+                'product_id' => null,
+                'description' => $description,
+                'qty' => 1,
+                'unit_price' => $bill,
+                'subtotal' => $bill,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+            // (optional) kalau ingin catat transaksi produk / update stock, lakukan di sini
+
+            DB::commit();
+
+            // siapkan object $sale untuk view (sama format dengan blade receipt)
+            $sale = (object) [
+                'id' => $saleId,
+                'timestamp' => $now,
+                'total' => $bill,
+                'payment_method' => $data['payment_method'],
+                'paid_amount' => (int)$data['paid_amount'],
+                'change_amount' => max(0, (int)$data['paid_amount'] - $bill),
+                'note' => $description,
+                'items' => [
+                    (object)[
+                        'product' => null,
+                        'description' => $description,
+                        'qty' => 1,
+                        'unit_price' => $bill,
+                        'subtotal' => $bill,
+                    ]
+                ],
+            ];
+
+            // tampilkan struk (view yang sudah saya berikan: resources/views/sales/receipt.blade.php)
+            return view('sales.receipt', compact('sale'));
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            // log error dan kembalikan pesan
+            \Log::error('storeFixed error: '.$e->getMessage(), ['trace'=>$e->getTraceAsString()]);
+            return back()->withInput()->withErrors(['error' => 'Gagal membuat sesi: '.$e->getMessage()]);
+        }
     }
-
-    // buat session (sesuaikan struktur tabelmu)
-    // ... setelah perhitungan $bill, $minutesToAdd, dsb.
-
-    $session = new Session();
-    // isi id (UUID) karena kolom id di DB tidak auto-increment
-    $session->id = (string) Str::uuid();
-
-    $session->ps_unit_id = $unit->id;
-    $session->start_time = Carbon::parse($data['start_time']);
-    $minutesToAdd = (int) round($hours * 60);
-    $session->end_time = Carbon::parse($data['start_time'])->addMinutes($minutesToAdd);
-
-    $session->minutes = $minutesToAdd;
-    $session->extra_controllers = $extraControllers;
-    $session->arcade_controllers = $arcadeControllers;
-    $session->bill = $bill;
-    $session->payment_method = $data['payment_method'];
-    $session->paid_amount = (float) $data['paid_amount'];
-
-    // optional: isi user / ip / ua jika tersedia
-    // optional: fill user / ip / ua
-    $session->user_id    = auth()->id() ?? null;
-    $session->ip_address = $request->ip();
-    $session->user_agent = $request->userAgent();
-
-    // minimal payload agar kolom NOT NULL tidak jadi masalah
-    $session->payload = json_encode([
-        'created_from' => 'web',
-        'unit' => $unit->name ?? $unit->id,
-        'hours' => $hours,
-    ]);
-
-    // set last activity (kolom int) — wajib karena DB menolak jika kosong
-    $session->last_activity = (int) time();
-
-    // simpan
-    $session->save();
-
-
-
-    // lakukan tindakan lain (catat penjualan, cetak struk, dsb.)
-    return redirect()->route('sessions.index')->with('success', 'Sesi berhasil dibuat.');
-}
 
 
     public function destroy($sid)
