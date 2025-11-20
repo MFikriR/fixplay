@@ -14,7 +14,7 @@
 
 <div class="row">
   <div class="col-md-6">
-    <div class="card">
+    <div class="card card-dark">
       <div class="card-header">Tambah Produk</div>
       <div class="card-body">
         <form method="post" action="{{ route('products.store') }}">
@@ -51,7 +51,7 @@
   </div>
 
   <div class="col-md-6">
-    <div class="card">
+    <div class="card card-dark">
       <div class="card-header">Daftar Produk</div>
       <div class="card-body p-0">
         <div class="table-responsive">

@@ -4,7 +4,7 @@
 
 @section('page_content')
 <h4 class="mb-3 text-dark fw-bold">Penjualan Produk</h4>
-<div class="card">
+<div class="card card-dark">
   <div class="card-body">
     {{-- Alert Modal --}}
     <div class="modal fade fixplay-alert" id="posAlert" tabindex="-1" aria-hidden="true">
@@ -31,7 +31,7 @@
         radial-gradient(100% 140% at 0% 0%, rgba(124,58,237,.25), transparent 40%),
         radial-gradient(120% 120% at 100% 0%, rgba(59,130,246,.22), transparent 45%),
         linear-gradient(180deg, #151528, #0f1020);
-      color:#eef2ff;
+      color:#101d46;
       border:1px solid rgba(122,92,255,.45);
       box-shadow: 0 10px 30px rgba(0,0,0,.45), 0 0 24px rgba(124,58,237,.3);
       border-radius:14px;
@@ -78,6 +78,44 @@
 
       <button class="btn btn-success mt-3">Checkout</button>
     </form>
+    {{-- Riwayat Pembelian Makanan dan Minuman --}}
+    <div class="card mt-4">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Riwayat Pembelian Makanan dan Minuman</span>
+        <small class="text-muted">Terakhir 10</small>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm m-0 align-middle">
+            <thead>
+              <tr>
+                <th>Waktu</th>
+                <th>Produk</th>
+                <th class="text-center">Qty</th>
+                <th class="text-end">Subtotal</th>
+                <th class="text-end d-print-none"></th>
+              </tr>
+            </thead>
+            <tbody>
+              @forelse($recentSales as $rs)
+                <tr>
+                  <td>{{ \Carbon\Carbon::parse($rs->sold_at)->format('d-m H:i') }}</td>
+                  <td>{{ $rs->product_name }}</td>
+                  <td class="text-center">{{ $rs->qty }}</td>
+                  <td class="text-end">Rp {{ number_format($rs->subtotal ?? 0,0,',','.') }}</td>
+                  <td class="text-end d-print-none">
+                    <a href="{{ url('/sales/'.$rs->sale_id) }}" class="btn btn-sm btn-outline-secondary">Lihat</a>
+                  </td>
+                </tr>
+              @empty
+                <tr><td colspan="5" class="text-center text-muted p-3">Belum ada pembelian produk.</td></tr>
+              @endforelse
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 @endsection

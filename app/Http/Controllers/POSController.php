@@ -11,11 +11,33 @@ use Carbon\Carbon;
 
 class POSController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        // ambil produk yang aktif / dengan stok > 0 (sesuaikan query)
-        $products = Product::select('id','name','price','stock')->orderBy('name')->get();
-        return view('pos', compact('products'));
+        // ambil produk untuk pilihan POS
+        $products = Product::orderBy('name')->get();
+
+        // ambil 10 item penjualan produk terakhir (non-PS). 
+        // Menggunakan query builder agar tidak tergantung relasi Eloquent yang mungkin belum ada.
+        $recentSales = DB::table('sale_items')
+            ->join('sales', 'sale_items.sale_id', '=', 'sales.id')
+            ->join('products', 'sale_items.product_id', '=', 'products.id')
+            ->whereNotNull('sale_items.product_id')
+            ->select(
+                'sales.id as sale_id',
+                'sales.sold_at',
+                'products.name as product_name',
+                'sale_items.qty',
+                'sale_items.unit_price',
+                'sale_items.subtotal'
+            )
+            ->orderBy('sales.sold_at', 'desc')
+            ->limit(10)
+            ->get();
+
+        return view('pos', [
+            'products' => $products,
+            'recentSales' => $recentSales,
+        ]);
     }
 
     public function checkout(Request $request)
