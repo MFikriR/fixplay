@@ -8,6 +8,7 @@ use App\Http\Controllers\PSUnitController;
 use App\Http\Controllers\POSController;
 use App\Http\Controllers\ReportController;
 
+
 // Dashboard (halaman utama)
 Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
@@ -46,5 +47,6 @@ Route::prefix('purchases')->group(function(){
     Route::delete('/expenses/{id}', [ExpenseController::class,'destroy'])->name('purchases.expenses.destroy');
 });
 
-
 Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
+
+Route::post('/pos/checkout', [PosController::class,'checkout'])->name('pos.checkout');

@@ -6,6 +6,8 @@ use Illuminate\Http\Request;
 use App\Models\Product;   // ganti jika model berbeda
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Carbon\Carbon;
+
 
 class POSController extends Controller
 {
@@ -18,82 +20,147 @@ class POSController extends Controller
 
     public function checkout(Request $request)
     {
-        $data = $request->validate([
-            'product_id' => 'required|array|min:1',
-            'product_id.*' => 'required|integer|distinct',
-            'qty' => 'required|array',
-            'qty.*' => 'required|integer|min:1',
+        // minimal validation: arrays must be present and have same length
+        $request->validate([
+            'product_id' => 'required|array',
+            'product_id.*' => 'nullable|integer|exists:products,id',
+            'qty'        => 'required|array',
+            'qty.*'      => 'required|integer|min:1',
             'payment_method' => 'required|string',
-            'paid_amount' => 'required|numeric|min:0',
+            'paid_amount'    => 'required|numeric|min:0',
             'note' => 'nullable|string|max:1000',
         ]);
 
-        $productIds = $data['product_id'];
-        $qtys = $data['qty'];
+        $productIds = $request->input('product_id', []);
+        $qtys       = $request->input('qty', []);
+        $descs      = $request->input('description', []); // optional, your form currently doesn't send description[] but kept for flexibility
+        $payMethod  = $request->input('payment_method');
+        $paidAmount = (float) $request->input('paid_amount', 0);
+        $note       = $request->input('note', null);
+
+        $now = Carbon::now();
 
         DB::beginTransaction();
         try {
-            // lock rows for update to avoid race condition
-            $products = Product::whereIn('id', $productIds)->lockForUpdate()->get()->keyBy('id');
-
+            // Build items array and compute total
+            $items = [];
             $total = 0;
-            // validate stocks
-            foreach ($productIds as $i => $pid) {
-                $qty = intval($qtys[$i] ?? 0);
-                if (!isset($products[$pid])) {
-                    throw ValidationException::withMessages(['product_id' => "Produk dengan ID {$pid} tidak ditemukan."]);
+            $n = max(count($productIds), count($qtys));
+            for ($i=0; $i<$n; $i++) {
+                $pid = isset($productIds[$i]) && $productIds[$i] !== '' ? (int)$productIds[$i] : null;
+                $qty = isset($qtys[$i]) ? (int)$qtys[$i] : 0;
+                if (!$pid && $qty <= 0) {
+                    // skip empty row
+                    continue;
                 }
-                $p = $products[$pid];
-                if ($qty > $p->stock) {
-                    throw ValidationException::withMessages(['stock' => "Stok untuk {$p->name} tidak cukup."]);
+
+                // Lookup price from DB (official source) to avoid trusting client
+                $unitPrice = 0;
+                $productObj = null;
+                if ($pid) {
+                    $productObj = Product::find($pid);
+                    if (!$productObj) {
+                        throw new \Exception("Produk dengan id {$pid} tidak ditemukan.");
+                    }
+                    $unitPrice = (float) $productObj->price;
+                } else {
+                    // fallback: if POS supports free-text item, you may add support here
+                    $unitPrice = 0;
                 }
-                $total += $p->price * $qty;
+
+                $subtotal = $unitPrice * $qty;
+                $total += $subtotal;
+
+                $items[] = [
+                    'product_id' => $pid,
+                    'qty' => $qty,
+                    'unit_price' => $unitPrice,
+                    'description' => $descs[$i] ?? null,
+                    'subtotal' => $subtotal,
+                    'product_obj' => $productObj, // keep for later stock update
+                ];
             }
 
-            if (floatval($data['paid_amount']) < $total) {
-                throw ValidationException::withMessages(['paid_amount' => "Nominal dibayar kurang dari total Rp {$total}."]);
+            if (count($items) === 0) {
+                throw new \Exception("Tidak ada item yang valid untuk dibayar.");
             }
 
-            // Simpan transaksi — struktur tabel sales/order mungkin berbeda di projectmu.
-            // Contoh sederhana: simpan ke tabel `sales` dan `sale_items`.
-            $sale = DB::table('sales')->insertGetId([
+            // create sale
+            $saleId = DB::table('sales')->insertGetId([
+                'sold_at' => $now,
                 'total' => $total,
-                'payment_method' => $data['payment_method'],
-                'paid_amount' => $data['paid_amount'],
-                'note' => $data['note'] ?? null,
-                'created_at' => now(),
-                'updated_at' => now(),
+                'payment_method' => $payMethod,
+                'paid_amount' => $paidAmount,
+                'note' => $note,
+                'created_at' => $now,
+                'updated_at' => $now,
             ]);
 
-            // kurangi stok dan simpan item
-            foreach ($productIds as $i => $pid) {
-                $qty = intval($qtys[$i] ?? 0);
-                $p = $products[$pid];
+            // For each item: check stock (if product_id), insert sale_item, decrement stock
+            foreach ($items as $it) {
+                $pid = $it['product_id'];
+                $qty = $it['qty'];
+                $unitPrice = $it['unit_price'];
+                $desc = $it['description'];
+                $subtotal = $it['subtotal'];
 
-                // insert sale_items (jika tabel ada)
+                if ($pid) {
+                    // lock the product row for update to avoid race conditions
+                    $product = Product::where('id', $pid)->lockForUpdate()->first();
+
+                    if (!$product) {
+                        throw new \Exception("Produk tidak ditemukan (id={$pid})");
+                    }
+                    if ($product->stock < $qty) {
+                        throw new \Exception("Stok produk \"{$product->name}\" tidak cukup. (stok: {$product->stock}, minta: {$qty})");
+                    }
+
+                    // decrement stok (atomic)
+                    $product->decrement('stock', $qty);
+                    // optionally: $product->save();
+                }
+
                 DB::table('sale_items')->insert([
-                    'sale_id' => $sale,
+                    'sale_id' => $saleId,
                     'product_id' => $pid,
-                    'price' => $p->price,
+                    'description' => $desc,
                     'qty' => $qty,
-                    'subtotal' => $p->price * $qty,
-                    'created_at' => now(),
-                    'updated_at' => now(),
+                    'unit_price' => $unitPrice,
+                    'subtotal' => $subtotal,
+                    'created_at' => $now,
+                    'updated_at' => $now,
                 ]);
-
-                // update stok
-                $p->decrement('stock', $qty);
             }
 
             DB::commit();
-            return redirect()->route('pos.index')->with('success', 'Transaksi berhasil. Total: Rp ' . number_format($total,0,',','.'));
-        } catch (\Illuminate\Validation\ValidationException $ve) {
+
+            // build sale object for receipt view
+            $sale = (object)[
+                'id' => $saleId,
+                'timestamp' => $now,
+                'total' => $total,
+                'payment_method' => $payMethod,
+                'paid_amount' => $paidAmount,
+                'change_amount' => max(0, $paidAmount - $total),
+                'note' => $note,
+                'items' => array_map(function($it){
+                    return (object)[
+                        'product' => $it['product_id'] ? Product::find($it['product_id']) : null,
+                        'description' => $it['description'],
+                        'qty' => $it['qty'],
+                        'unit_price' => $it['unit_price'],
+                        'subtotal' => $it['subtotal'],
+                    ];
+                }, $items),
+            ];
+
+            // langsung tunjukkan receipt (atau redirect ke route lain seperti sales.show)
+            return view('sales.receipt', compact('sale'));
+
+        } catch (\Throwable $e) {
             DB::rollBack();
-            throw $ve;
-        } catch (\Throwable $th) {
-            DB::rollBack();
-            // log error jika perlu
-            return redirect()->back()->with('error', 'Gagal memproses transaksi: ' . $th->getMessage());
+            \log::error('POS checkout error: '.$e->getMessage(), ['trace'=>$e->getTraceAsString()]);
+            return back()->withInput()->withErrors(['error' => $e->getMessage()]);
         }
     }
 }

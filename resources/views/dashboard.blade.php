@@ -9,7 +9,7 @@
     border-radius:18px; padding:22px; color:#fff;
     background:
       radial-gradient(120% 140% at 0% 0%, rgba(255,255,255,.12), transparent 45%),
-      linear-gradient(180deg,#b91c1c,#dc2626 40%, #ef4444);
+      linear-gradient(180deg,#3c24c5,#090a70 40%, #341779);
     box-shadow: 0 18px 48px rgba(220,38,38,.35), 0 0 0 1px rgba(255,255,255,.08) inset;
     min-height:160px; display:flex; align-items:center; justify-content:center; text-align:center;
   }
