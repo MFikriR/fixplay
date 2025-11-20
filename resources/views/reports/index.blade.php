@@ -24,9 +24,6 @@
   <div class="col-sm-3 rng-day rng-week rng-month">
     <label class="form-label fw-bold text-dark">Tanggal referensi</label>
     <input name="date" type="date" class="form-control" value="{{ request('date', $start_date->format('Y-m-d')) }}">
-    <div class="form-text">
-      Harian = tanggal tsb • Mingguan/Bulanan = minggu/bulan dari tanggal tsb
-    </div>
   </div>
 
   <div class="col-sm-3 rng-custom">
