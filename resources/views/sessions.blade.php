@@ -1,9 +1,17 @@
 @extends('layouts.fixplay')
 
-
 @section('page_title', 'Kasir Fixplay')
 
 @section('page_content')
+
+{{-- Tambahkan Alert Session di sini --}}
+@if(session('success'))
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+  <i class="bi bi-check-circle-fill me-2"></i> {{ session('success') }}
+  <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+@endif
+
 <h4 class="mb-3 text-dark fw-bold">Sesi PS (Durasi Tetap)</h4>
 
 <div class="row g-3">
@@ -123,9 +131,10 @@
                 </td>
                 <td class="text-end amount-mono">Rp {{ number_format($s->bill ?? 0,0,',','.') }}</td>
                 <td class="text-end d-print-none">
+                  {{-- Form Hapus Sesi --}}
                   <form class="d-inline confirm-delete" method="post"
                         action="{{ route('sessions.delete', ['sid' => $s->id]) }}"
-                        onsubmit="return confirm('Hapus riwayat sesi ini? Penjualan terkait (jika ada) juga akan dihapus.');">
+                        onsubmit="return confirm('Hapus riwayat sesi ini? Pendapatan di laporan akan ikut terhapus.');">
                     @csrf
                     @method('DELETE')
                     <button class="btn btn-sm btn-outline-danger">Hapus</button>
