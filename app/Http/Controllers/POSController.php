@@ -9,8 +9,7 @@ use Illuminate\Validation\ValidationException;
 use Carbon\Carbon;
 
 
-class POSController extends Controller
-{
+class POSController extends Controller{
     public function index(Request $request)
     {
         // ambil produk untuk pilihan POS

@@ -97,8 +97,9 @@
                   onclick='return editSale({{ $s->id }}, {!! json_encode($s->note) !!}, {!! json_encode($s->payment_method) !!}, {{ $s->paid_amount ?? 0 }}, {{ $s->total ?? 0 }})'>
                   Edit
                 </button>
-                <form class="d-inline confirm-delete" method="post" action="{{ url('/sales/'.$s->id.'/delete') }}"
-                      onsubmit="return confirm('Hapus penjualan ini? Stok produk terkait akan dipulihkan.');">
+                <form class="d-inline confirm-delete" method="POST"
+                      action="{{ route('purchases.expenses.destroy', $e->id) }}"
+                      onsubmit="return confirm('Hapus pengeluaran ini?')">
                   @csrf
                   @method('DELETE')
                   <button class="btn btn-sm btn-outline-danger">Hapus</button>
@@ -144,18 +145,18 @@
             </tr>
           </thead>
           <tbody>
-            @foreach($expenses as $e)
+            @forelse($expenses as $e)
             <tr>
-              <td>{{ \Carbon\Carbon::parse($e->timestamp)->format('d-m H:i') }}</td>
+              <td>{{ $e->timestamp_fmt ?? (isset($e->timestamp) && $e->timestamp ? $e->timestamp->format('d-m H:i') : '') }}</td>
               <td>{{ $e->category }}</td>
               <td>{{ $e->description }}</td>
-              <td class="text-end">Rp {{ number_format($e->amount,0,',','.') }}</td>
+              <td class="text-end">Rp {{ number_format($e->amount ?? 0,0,',','.') }}</td>
               <td class="text-end d-print-none">
                 <button type="button" class="btn btn-sm btn-outline-secondary"
-                  onclick='return editExpense({{ $e->id }}, {!! json_encode($e->category) !!}, {!! json_encode($e->description) !!}, {{ $e->amount ?? 0 }}, {!! json_encode($e->timestamp ? $e->timestamp->format("Y-m-d\\TH:i") : "") !!})'>
+                  onclick='return editExpense({{ $e->id }}, {!! json_encode($e->category) !!}, {!! json_encode($e->description ?? '') !!}, {{ (int)($e->amount ?? 0) }}, {!! json_encode(isset($e->timestamp) ? ($e->timestamp_fmt ?? $e->timestamp) : "") !!})'>
                   Edit
                 </button>
-                <form class="d-inline confirm-delete" method="post" action="{{ url('/expenses/'.$e->id.'/delete') }}"
+                <form class="d-inline" method="POST" action="{{ route('purchases.expenses.destroy', $e->id) }}"
                       onsubmit="return confirm('Hapus pengeluaran ini?');">
                   @csrf
                   @method('DELETE')
@@ -163,7 +164,9 @@
                 </form>
               </td>
             </tr>
-            @endforeach
+            @empty
+              <tr><td colspan="5" class="text-center text-muted p-3">Belum ada data.</td></tr>
+            @endforelse
           </tbody>
           <tfoot>
             <tr class="fw-bold">
