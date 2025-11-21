@@ -86,28 +86,30 @@
             </tr>
           </thead>
           <tbody>
-            @foreach($sales as $s)
-            <tr>
-              <td>{{ \Carbon\Carbon::parse($s->sold_at)->format('d-m H:i') }}</td>
-              <td>{{ $s->note }}</td>
-              <td class="text-end">Rp {{ number_format($s->total,0,',','.') }}</td>
-              <td class="text-end d-print-none">
-                <a class="btn btn-sm btn-outline-primary bg-white text-dark" href="{{ url('/sales/'.$s->id) }}">Lihat</a>
-                <button type="button" class="btn btn-sm btn-outline-secondary"
-                  onclick='return editSale({{ $s->id }}, {!! json_encode($s->note) !!}, {!! json_encode($s->payment_method) !!}, {{ $s->paid_amount ?? 0 }}, {{ $s->total ?? 0 }})'>
-                  Edit
-                </button>
-                <form class="d-inline confirm-delete" method="POST"
-                      action="{{ route('purchases.expenses.destroy', $e->id) }}"
-                      onsubmit="return confirm('Hapus pengeluaran ini?')">
-                  @csrf
-                  @method('DELETE')
-                  <button class="btn btn-sm btn-outline-danger">Hapus</button>
-                </form>
-              </td>
-            </tr>
-            @endforeach
+            @forelse($sales as $s)
+              <tr>
+                <td>{{ \Carbon\Carbon::parse($s->sold_at)->format('d-m H:i') }}</td>
+                <td>{{ $s->note }}</td>
+                <td class="text-end">Rp {{ number_format($s->total ?? 0,0,',','.') }}</td>
+                <td class="text-end d-print-none">
+                  {{-- Lihat (detail sale) --}}
+                  <a class="btn btn-sm btn-outline-primary bg-white text-dark" href="{{ url('/sales/'.$s->id) }}">Lihat</a>
+
+                  {{-- Edit (JS helper) --}}
+                  <button type="button" class="btn btn-sm btn-outline-secondary"
+                    onclick='return editSale({{ $s->id }}, {!! json_encode($s->note) !!}, {!! json_encode($s->payment_method) !!}, {{ $s->paid_amount ?? 0 }}, {{ $s->total ?? 0 }})'>
+                    Edit
+                  </button>
+
+                  {{-- catatan: tidak ada form HAPUS untuk sale di aplikasi awal (tidak ada route DELETE sales/{id})
+                      jadi kami tidak menambahkan tombol hapus di sini untuk menghindari 404/error --}}
+                </td>
+              </tr>
+            @empty
+              <tr><td colspan="4" class="text-center text-muted p-3">Belum ada penjualan.</td></tr>
+            @endforelse
           </tbody>
+
           <tfoot>
             <tr class="fw-bold">
               <td colspan="2">Total PS</td>
@@ -355,12 +357,20 @@ function editExpense(id, category, description, amount, ts) {
 
   const f = document.createElement('form');
   f.method = 'post';
-  f.action = '/expenses/' + id + '/update';
+  f.action = '/purchases/expenses/' + id; // sesuai route
+  // csrf
+  const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+  const _token = document.createElement('input'); _token.type='hidden'; _token.name='_token'; _token.value=token; f.appendChild(_token);
+  // spoof PUT
+  const _method = document.createElement('input'); _method.type='hidden'; _method.name='_method'; _method.value='PUT'; f.appendChild(_method);
+
   [['category', newCat], ['description', newDesc], ['amount', newAmt], ['timestamp', newTs]].forEach(([k,v])=>{
     const i = document.createElement('input'); i.type='hidden'; i.name=k; i.value=v; f.appendChild(i);
   });
+
   document.body.appendChild(f); f.submit();
   return false;
 }
+
 </script>
 @endpush
