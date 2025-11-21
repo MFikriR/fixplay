@@ -30,11 +30,11 @@
             </div>
             <div class="col-md-4">
               <label class="form-label">Harga (Rp)</label>
-              <input name="price" type="number" class="form-control" value="{{ old('price',0) }}" required>
+              <input name="price" type="number" class="form-control" value="{{ old('price') }}" required>
             </div>
             <div class="col-md-4">
               <label class="form-label">Stok</label>
-              <input name="stock" type="number" class="form-control" value="{{ old('stock',0) }}" required>
+              <input name="stock" type="number" class="form-control" value="{{ old('stock') }}" required>
             </div>
             <div class="col-md-4">
               <label class="form-label">Satuan</label>

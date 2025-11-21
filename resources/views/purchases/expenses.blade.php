@@ -22,7 +22,7 @@
           </div>
           <div class="mb-2">
             <label class="form-label">Jumlah (Rp)</label>
-            <input name="amount" type="number" class="form-control" value="{{ old('amount',0) }}" required>
+            <input name="amount" type="number" class="form-control" value="{{ old('amount') }}" required>
           </div>
           <div class="mb-2">
             <label class="form-label">Tanggal & Waktu (opsional)</label>

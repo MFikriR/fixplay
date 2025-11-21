@@ -71,7 +71,7 @@
         </div>
         <div class="col-md-3">
           <label class="form-label">Dibayar</label>
-          <input type="number" class="form-control" name="paid_amount" id="paidAmount" value="0" min="0">
+          <input type="number" class="form-control" name="paid_amount" id="paidAmount" value="" min="0">
         </div>
         <div class="col-md-3">
           <label class="form-label">Kembalian</label>
@@ -183,7 +183,7 @@
         </select>
       </div>
       <div class="col-md-2">
-        <label class="form-label">Qty</label>
+        <label class="form-label">Jumlah Produk</label>
         <input type="number" class="form-control qty" name="qty[]" value="1" min="1">
       </div>
       <div class="col-md-2">
