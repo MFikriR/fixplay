@@ -3,6 +3,14 @@
 @section('page_title','Kasir Fixplay - Penjualan')
 
 @section('page_content')
+{{-- Menampilkan pesan sukses jika ada (misal setelah hapus/edit) --}}
+@if(session('success'))
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+  <i class="bi bi-check-circle-fill me-2"></i> {{ session('success') }}
+  <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+@endif
+
 <h4 class="mb-3 text-dark fw-bold">Penjualan Produk</h4>
 <div class="card card-dark">
   <div class="card-body">
@@ -93,7 +101,7 @@
                 <th>Produk</th>
                 <th class="text-center">Qty</th>
                 <th class="text-end">Subtotal</th>
-                <th class="text-end d-print-none"></th>
+                <th class="text-end d-print-none">Aksi</th>
               </tr>
             </thead>
             <tbody>
@@ -104,7 +112,26 @@
                   <td class="text-center">{{ $rs->qty }}</td>
                   <td class="text-end">Rp {{ number_format($rs->subtotal ?? 0,0,',','.') }}</td>
                   <td class="text-end d-print-none">
-                    <a href="{{ url('/sales/'.$rs->sale_id) }}" class="btn btn-sm btn-outline-secondary">Lihat</a>
+                    <div class="btn-group btn-group-sm" role="group">
+                        {{-- Lihat --}}
+                        <a href="{{ route('sales.show', $rs->sale_id) }}" class="btn btn-outline-secondary" title="Lihat Struk">
+                            <i class="bi bi-eye"></i>
+                        </a>
+                        
+                        {{-- Edit --}}
+                        <a href="{{ route('sales.edit', $rs->sale_id) }}" class="btn btn-outline-warning" title="Edit Pembayaran">
+                            <i class="bi bi-pencil"></i>
+                        </a>
+
+                        {{-- Hapus --}}
+                        <form action="{{ route('sales.destroy', $rs->sale_id) }}" method="POST" class="d-inline" onsubmit="return confirm('Yakin ingin menghapus transaksi ini? Stok produk akan dikembalikan otomatis.');">
+                            @csrf
+                            @method('DELETE')
+                            <button type="submit" class="btn btn-outline-danger" title="Hapus Transaksi">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </form>
+                    </div>
                   </td>
                 </tr>
               @empty

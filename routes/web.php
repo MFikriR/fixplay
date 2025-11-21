@@ -5,14 +5,15 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\SessionsController;
 use App\Http\Controllers\PSUnitController;
-use App\Http\Controllers\POSController;      // pastikan ini cocok dengan nama class
+use App\Http\Controllers\POSController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SaleController;
 use App\Http\Controllers\ExpenseController;
 
+// Dashboard
 Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
-// Produk — gunakan resource sekali saja (sesuaikan except bila perlu)
+// Produk — gunakan resource sekali saja
 Route::resource('products', ProductController::class)->except(['show','edit']);
 
 // Sessions (rental)
@@ -31,7 +32,7 @@ Route::delete('/ps-units/{id}', [PSUnitController::class, 'destroy'])->name('ps_
 Route::get('/pos', [POSController::class, 'index'])->name('pos.index');
 Route::post('/pos/checkout', [POSController::class, 'checkout'])->name('pos.checkout');
 
-// Purchases / Expenses (prefix purchases)
+// Purchases / Expenses
 Route::prefix('purchases')->group(function(){
     Route::get('/expenses', [ExpenseController::class,'index'])->name('purchases.expenses.index');
     Route::post('/expenses', [ExpenseController::class,'store'])->name('purchases.expenses.store');
@@ -42,5 +43,11 @@ Route::prefix('purchases')->group(function(){
 // Reports
 Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
 
-// Sales receipt view
-Route::get('/sales/{id}', [SaleController::class, 'show'])->name('sales.show');
+// --- BAGIAN INI YANG PENTING ---
+// Sales (Manajemen Penjualan: Lihat, Edit, Hapus)
+Route::prefix('sales')->name('sales.')->group(function() {
+    Route::get('/{id}', [SaleController::class, 'show'])->name('show');       // Lihat Struk
+    Route::get('/{id}/edit', [SaleController::class, 'edit'])->name('edit');  // Form Edit
+    Route::put('/{id}', [SaleController::class, 'update'])->name('update');   // Proses Update
+    Route::delete('/{id}', [SaleController::class, 'destroy'])->name('destroy'); // Proses Hapus
+});
