@@ -3,33 +3,27 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use App\Models\Product;   // ganti jika model berbeda
+use App\Models\Product;
+use App\Models\Sale;      // <--- PERBAIKAN: Import Model Sale
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Carbon\Carbon;
 
-
-class POSController extends Controller{
+class POSController extends Controller
+{
     public function index(Request $request)
     {
-        // ambil produk untuk pilihan POS
+        // Ambil produk untuk pilihan di form POS
         $products = Product::orderBy('name')->get();
 
-        // ambil 10 item penjualan produk terakhir (non-PS). 
-        // Menggunakan query builder agar tidak tergantung relasi Eloquent yang mungkin belum ada.
-        $recentSales = DB::table('sale_items')
-            ->join('sales', 'sale_items.sale_id', '=', 'sales.id')
-            ->join('products', 'sale_items.product_id', '=', 'products.id')
-            ->whereNotNull('sale_items.product_id')
-            ->select(
-                'sales.id as sale_id',
-                'sales.sold_at',
-                'products.name as product_name',
-                'sale_items.qty',
-                'sale_items.unit_price',
-                'sale_items.subtotal'
-            )
-            ->orderBy('sales.sold_at', 'desc')
+        // Ambil Riwayat Transaksi (Header), bukan per Item.
+        // Menggunakan 'Sale::with' agar bisa mengambil detail itemnya sekaligus.
+        $recentSales = Sale::with(['items.product'])
+            ->whereHas('items', function($q){
+                // Hanya ambil transaksi yang punya produk fisik (bukan murni rental PS)
+                $q->whereNotNull('product_id'); 
+            })
+            ->orderBy('sold_at', 'desc')
             ->limit(10)
             ->get();
 
@@ -41,7 +35,7 @@ class POSController extends Controller{
 
     public function checkout(Request $request)
     {
-        // minimal validation: arrays must be present and have same length
+        // Validasi input
         $request->validate([
             'product_id' => 'required|array',
             'product_id.*' => 'nullable|integer|exists:products,id',
@@ -54,7 +48,7 @@ class POSController extends Controller{
 
         $productIds = $request->input('product_id', []);
         $qtys       = $request->input('qty', []);
-        $descs      = $request->input('description', []); // optional, your form currently doesn't send description[] but kept for flexibility
+        $descs      = $request->input('description', []); 
         $payMethod  = $request->input('payment_method');
         $paidAmount = (float) $request->input('paid_amount', 0);
         $note       = $request->input('note', null);
@@ -63,19 +57,21 @@ class POSController extends Controller{
 
         DB::beginTransaction();
         try {
-            // Build items array and compute total
+            // Hitung total dan siapkan array item
             $items = [];
             $total = 0;
             $n = max(count($productIds), count($qtys));
+
             for ($i=0; $i<$n; $i++) {
                 $pid = isset($productIds[$i]) && $productIds[$i] !== '' ? (int)$productIds[$i] : null;
                 $qty = isset($qtys[$i]) ? (int)$qtys[$i] : 0;
+                
+                // Skip baris kosong
                 if (!$pid && $qty <= 0) {
-                    // skip empty row
                     continue;
                 }
 
-                // Lookup price from DB (official source) to avoid trusting client
+                // Ambil harga dari database
                 $unitPrice = 0;
                 $productObj = null;
                 if ($pid) {
@@ -85,7 +81,6 @@ class POSController extends Controller{
                     }
                     $unitPrice = (float) $productObj->price;
                 } else {
-                    // fallback: if POS supports free-text item, you may add support here
                     $unitPrice = 0;
                 }
 
@@ -98,7 +93,7 @@ class POSController extends Controller{
                     'unit_price' => $unitPrice,
                     'description' => $descs[$i] ?? null,
                     'subtotal' => $subtotal,
-                    'product_obj' => $productObj, // keep for later stock update
+                    'product_obj' => $productObj, 
                 ];
             }
 
@@ -106,10 +101,10 @@ class POSController extends Controller{
                 throw new \Exception("Tidak ada item yang valid untuk dibayar.");
             }
 
-            // create sale
+            // Simpan Header Penjualan (Sales)
             $saleId = DB::table('sales')->insertGetId([
                 'sold_at' => $now,
-                'total' => $total,
+                'total' => $total, // Simpan total di header
                 'payment_method' => $payMethod,
                 'paid_amount' => $paidAmount,
                 'note' => $note,
@@ -117,7 +112,7 @@ class POSController extends Controller{
                 'updated_at' => $now,
             ]);
 
-            // For each item: check stock (if product_id), insert sale_item, decrement stock
+            // Simpan Detail Item (Sale Items) & Kurangi Stok
             foreach ($items as $it) {
                 $pid = $it['product_id'];
                 $qty = $it['qty'];
@@ -126,7 +121,7 @@ class POSController extends Controller{
                 $subtotal = $it['subtotal'];
 
                 if ($pid) {
-                    // lock the product row for update to avoid race conditions
+                    // Lock produk untuk update stok aman
                     $product = Product::where('id', $pid)->lockForUpdate()->first();
 
                     if (!$product) {
@@ -136,9 +131,7 @@ class POSController extends Controller{
                         throw new \Exception("Stok produk \"{$product->name}\" tidak cukup. (stok: {$product->stock}, minta: {$qty})");
                     }
 
-                    // decrement stok (atomic)
                     $product->decrement('stock', $qty);
-                    // optionally: $product->save();
                 }
 
                 DB::table('sale_items')->insert([
@@ -155,7 +148,7 @@ class POSController extends Controller{
 
             DB::commit();
 
-            // build sale object for receipt view
+            // Buat objek sale untuk view struk
             $sale = (object)[
                 'id' => $saleId,
                 'timestamp' => $now,
@@ -175,12 +168,11 @@ class POSController extends Controller{
                 }, $items),
             ];
 
-            // langsung tunjukkan receipt (atau redirect ke route lain seperti sales.show)
             return view('sales.receipt', compact('sale'));
 
         } catch (\Throwable $e) {
             DB::rollBack();
-            \log::error('POS checkout error: '.$e->getMessage(), ['trace'=>$e->getTraceAsString()]);
+            \Log::error('POS checkout error: '.$e->getMessage(), ['trace'=>$e->getTraceAsString()]);
             return back()->withInput()->withErrors(['error' => $e->getMessage()]);
         }
     }

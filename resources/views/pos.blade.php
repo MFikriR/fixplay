@@ -86,7 +86,8 @@
 
       <button class="btn btn-success mt-3">Checkout</button>
     </form>
-    {{-- Riwayat Pembelian Makanan dan Minuman --}}
+    
+    {{-- Riwayat Pembelian (Versi Baru: Per Transaksi) --}}
     <div class="card mt-4">
       <div class="card-header d-flex justify-content-between align-items-center">
         <span>Riwayat Pembelian Makanan dan Minuman</span>
@@ -98,9 +99,8 @@
             <thead>
               <tr>
                 <th>Waktu</th>
-                <th>Produk</th>
-                <th class="text-center">Qty</th>
-                <th class="text-end">Subtotal</th>
+                <th>Detail Item</th>
+                <th class="text-end">Total</th>
                 <th class="text-end d-print-none">Aksi</th>
               </tr>
             </thead>
@@ -108,23 +108,38 @@
               @forelse($recentSales as $rs)
                 <tr>
                   <td>{{ \Carbon\Carbon::parse($rs->sold_at)->format('d-m H:i') }}</td>
-                  <td>{{ $rs->product_name }}</td>
-                  <td class="text-center">{{ $rs->qty }}</td>
-                  <td class="text-end">Rp {{ number_format($rs->subtotal ?? 0,0,',','.') }}</td>
+                  <td>
+                    {{-- Loop item dalam satu sel agar mie & rosta menyatu --}}
+                    <ul class="list-unstyled m-0 small">
+                      @foreach($rs->items as $item)
+                        @if($item->product)
+                          <li>
+                            {{ $item->product->name }} 
+                            <span class="text-muted fw-bold">x{{ $item->qty }}</span>
+                          </li>
+                        @endif
+                      @endforeach
+                    </ul>
+                  </td>
+                  <td class="text-end">
+                    {{-- Gunakan logika fallback total --}}
+                    @php 
+                        $displayTotal = $rs->total > 0 ? $rs->total : $rs->items->sum('subtotal'); 
+                    @endphp
+                    Rp {{ number_format($displayTotal, 0, ',', '.') }}
+                  </td>
                   <td class="text-end d-print-none">
                     <div class="btn-group btn-group-sm" role="group">
-                        {{-- Lihat --}}
-                        <a href="{{ route('sales.show', $rs->sale_id) }}" class="btn btn-outline-secondary" title="Lihat Struk">
+                        {{-- PERBAIKAN: Gunakan $rs->id, bukan $rs->sale_id --}}
+                        <a href="{{ route('sales.show', $rs->id) }}" class="btn btn-outline-secondary" title="Lihat Struk">
                             <i class="bi bi-eye"></i>
                         </a>
                         
-                        {{-- Edit --}}
-                        <a href="{{ route('sales.edit', $rs->sale_id) }}" class="btn btn-outline-warning" title="Edit Pembayaran">
+                        <a href="{{ route('sales.edit', $rs->id) }}" class="btn btn-outline-warning" title="Edit Pembayaran">
                             <i class="bi bi-pencil"></i>
                         </a>
 
-                        {{-- Hapus --}}
-                        <form action="{{ route('sales.destroy', $rs->sale_id) }}" method="POST" class="d-inline" onsubmit="return confirm('Yakin ingin menghapus transaksi ini? Stok produk akan dikembalikan otomatis.');">
+                        <form action="{{ route('sales.destroy', $rs->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Yakin ingin menghapus transaksi ini? Stok produk akan dikembalikan otomatis.');">
                             @csrf
                             @method('DELETE')
                             <button type="submit" class="btn btn-outline-danger" title="Hapus Transaksi">
@@ -135,7 +150,7 @@
                   </td>
                 </tr>
               @empty
-                <tr><td colspan="5" class="text-center text-muted p-3">Belum ada pembelian produk.</td></tr>
+                <tr><td colspan="4" class="text-center text-muted p-3">Belum ada pembelian produk.</td></tr>
               @endforelse
             </tbody>
           </table>

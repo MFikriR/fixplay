@@ -6,7 +6,7 @@
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h4 class="text-dark fw-bold">Edit Transaksi #{{ $sale->id }}</h4>
-        <a href="{{ route('pos.index') }}" class="btn btn-secondary btn-sm">Kembali</a>
+        <a href="{{ route('dashboard') }}" class="btn btn-secondary btn-sm">Kembali ke Dashboard</a>
     </div>
 
     <div class="card card-dark">
@@ -16,21 +16,28 @@
                 @method('PUT')
 
                 <div class="alert alert-info">
-                    <strong>Info:</strong> Saat ini hanya dapat mengedit rincian pembayaran. 
-                    Jika terjadi kesalahan input barang (jumlah/item), silakan 
-                    <span class="text-danger fw-bold">Hapus Transaksi</span> ini di menu POS dan input ulang agar stok tetap akurat.
+                    <strong>Info:</strong> Mengubah <b>Total Transaksi</b> akan memperbarui harga item/sesi di database agar laporan akurat.
                 </div>
 
                 <div class="row mb-3">
+                    {{-- KOLOM TOTAL TRANSAKSI (DIBUAT BISA DIEDIT) --}}
                     <div class="col-md-6">
-                        <label class="form-label">Total Transaksi (Tidak dapat diubah)</label>
-                        <input type="text" class="form-control bg-secondary text-white" 
-                               value="Rp {{ number_format($sale->total_amount, 0, ',', '.') }}" disabled>
+                        <label class="form-label fw-bold">Total Transaksi (Tagihan)</label>
+                        <div class="input-group">
+                            <span class="input-group-text">Rp</span>
+                            {{-- Menggunakan nama 'total_bill' agar dibaca controller --}}
+                            <input type="number" name="total_bill" class="form-control fw-bold text-primary" 
+                                   value="{{ $sale->total_amount > 0 ? $sale->total_amount : $sale->items->sum('subtotal') }}" required>
+                        </div>
+                        <small class="text-muted">Ubah angka ini jika harga sesi/item salah.</small>
                     </div>
+
+                    {{-- KOLOM WAKTU TRANSAKSI (DIBUAT BISA DIEDIT) --}}
                     <div class="col-md-6">
                         <label class="form-label">Waktu Transaksi</label>
-                        <input type="text" class="form-control bg-secondary text-white" 
-                               value="{{ $sale->created_at }}" disabled>
+                        {{-- Menggunakan datetime-local --}}
+                        <input type="datetime-local" name="created_at" class="form-control" 
+                               value="{{ \Carbon\Carbon::parse($sale->sold_at ?? $sale->created_at)->format('Y-m-d\TH:i') }}" required>
                     </div>
                 </div>
 
@@ -46,10 +53,7 @@
                     <div class="col-md-4">
                         <label class="form-label">Nominal Dibayar (Rp)</label>
                         <input type="number" name="paid_amount" class="form-control" 
-                               value="{{ $sale->paid_amount }}" min="{{ $sale->total_amount }}">
-                        @error('paid_amount')
-                            <div class="text-danger small mt-1">{{ $message }}</div>
-                        @enderror
+                               value="{{ $sale->paid_amount }}">
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">Catatan</label>

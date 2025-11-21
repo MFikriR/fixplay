@@ -94,14 +94,19 @@
                     <td>{{ $t['title'] }}</td>
                     <td class="text-end">Rp {{ number_format($t['total'],0,',','.') }}</td>
                     <td class="text-end d-print-none">
-                      {{-- ganti href ke route detail penjualan jika sudah ada --}}
-                      <a href="{{ url('/sales/'.$t['id']) }}" class="btn btn-sm btn-outline-secondary text-dark">Detail</a>
-                      {{-- contoh tombol hapus (aktifkan saat route sudah ada) --}}
-                      {{-- <form class="d-inline confirm-delete" method="post" action="{{ route('sales.destroy',$t['id']) }}" data-confirm="Hapus transaksi ini?">
-                        @csrf @method('DELETE')
-                        <button class="btn btn-sm btn-outline-danger">Hapus</button>
-                      </form> --}}
-                    </td>
+                    {{-- 1. Detail --}}
+                    <a href="{{ route('sales.show', $t['id']) }}" class="btn btn-sm btn-outline-secondary text-dark me-1">Detail</a>
+                    
+                    {{-- 2. Edit (Kuning) --}}
+                    <a href="{{ route('sales.edit', $t['id']) }}" class="btn btn-sm btn-outline-warning text-dark me-1">Edit</a>
+                    
+                    {{-- 3. Hapus (Merah dengan Konfirmasi) --}}
+                    <form class="d-inline" method="post" action="{{ route('sales.destroy', $t['id']) }}" onsubmit="return confirm('Yakin ingin menghapus transaksi ini?');">
+                      @csrf 
+                      @method('DELETE')
+                      <button type="submit" class="btn btn-sm btn-outline-danger">Hapus</button>
+                    </form>
+                  </td>
                   </tr>
                 @empty
                   <tr><td colspan="4" class="text-center text-muted p-3">Belum ada transaksi.</td></tr>

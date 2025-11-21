@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Sale;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Illuminate\Http\Request;
 
 class DashboardController extends Controller
 {
@@ -33,8 +34,10 @@ class DashboardController extends Controller
         $daysBack    = 10;
         $chartStart  = Carbon::today($tz)->subDays($daysBack - 1)->startOfDay();
 
-        $rows = Sale::selectRaw('DATE(sold_at) AS d, SUM(total) AS t')
-            ->whereBetween('sold_at', [$chartStart, $end])
+        // PERBAIKAN GRAFIK: Gunakan SUM(sale_items.subtotal) karena tabel sales tidak punya kolom total
+        $rows = Sale::selectRaw('DATE(sales.sold_at) AS d, SUM(sale_items.subtotal) AS t')
+            ->join('sale_items', 'sales.id', '=', 'sale_items.sale_id') // Join ke items untuk ambil total
+            ->whereBetween('sales.sold_at', [$chartStart, $end])
             ->groupBy('d')
             ->orderBy('d')
             ->get();
@@ -62,18 +65,34 @@ class DashboardController extends Controller
         $lastTx = [];
         foreach ($last as $s) {
             $names = [];
+            
             foreach ($s->items->take(3) as $it) {
-                $names[] = $it->product->name ?? ($it->description ?? 'Item');
+                // Hanya ambil nama jika Produk fisik.
+                if ($it->product) {
+                    $names[] = $it->product->name;
+                }
             }
-            $title = $names ? implode(', ', $names) : ($s->note ?: 'Penjualan');
+
+            // Logika Judul (Rental mengambil dari Note)
+            $title = !empty($names) ? implode(', ', $names) : ($s->note ?: 'Item');
+
             if ($s->items->count() > 3) {
                 $title .= ' +' . ($s->items->count() - 3) . ' item';
+            }
+
+            // PERBAIKAN TOTAL DI SINI:
+            // Ambil total dari kolom 'total' atau 'total_amount' jika ada.
+            // JIKA 0 (karena tabel sales tidak menyimpan total), HITUNG dari jumlah subtotal item.
+            $totalFix = $s->total ?? $s->total_amount ?? 0;
+            
+            if ($totalFix == 0) {
+                $totalFix = $s->items->sum('subtotal');
             }
 
             $lastTx[] = [
                 'id'    => $s->id,
                 'date'  => Carbon::parse($s->sold_at, $tz)->format('d-m-Y H:i'),
-                'total' => (int) ($s->total ?? 0),
+                'total' => (int) $totalFix,
                 'title' => $title,
             ];
         }

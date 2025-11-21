@@ -9,9 +9,6 @@ use Illuminate\Support\Facades\DB;
 
 class SaleController extends Controller
 {
-    /**
-     * Menampilkan detail struk penjualan.
-     */
     public function show($id)
     {
         $sale = Sale::find($id);
@@ -20,7 +17,6 @@ class SaleController extends Controller
             abort(404);
         }
 
-        // Mengambil item penjualan dengan join ke produk untuk nama
         $items = DB::table('sale_items')
             ->where('sale_id', $sale->id)
             ->leftJoin('products', 'sale_items.product_id', '=', 'products.id')
@@ -33,78 +29,90 @@ class SaleController extends Controller
         ]);
     }
 
-    /**
-     * Menampilkan form edit penjualan.
-     * (Fokus pada edit metode bayar, catatan, dan nominal)
-     */
     public function edit($id)
     {
-        $sale = Sale::findOrFail($id);
+        // Pastikan memuat relasi items agar bisa diedit harganya
+        $sale = Sale::with('items')->findOrFail($id);
 
         return view('sales.edit', [
             'sale' => $sale
         ]);
     }
 
-    /**
-     * Memproses update data penjualan.
-     */
     public function update(Request $request, $id)
     {
+        // Validasi input
         $request->validate([
+            'created_at'     => 'required|date',          // Waktu Transaksi
+            'total_bill'     => 'required|numeric|min:0', // Total Tagihan Baru
             'payment_method' => 'required|string',
             'paid_amount'    => 'required|numeric|min:0',
             'note'           => 'nullable|string|max:255',
         ]);
 
-        $sale = Sale::findOrFail($id);
+        $sale = Sale::with('items')->findOrFail($id);
+        $newTotal = $request->total_bill;
 
-        // Validasi sederhana: Bayar tidak boleh kurang dari total
-        if ($request->paid_amount < $sale->total_amount) {
-            return back()->withErrors(['paid_amount' => 'Nominal dibayar kurang dari total transaksi!']);
+        // Cek apakah uang yang dibayar kurang dari tagihan baru
+        if ($request->paid_amount < $newTotal) {
+            return back()->withErrors(['paid_amount' => 'Nominal dibayar kurang dari total tagihan baru!']);
         }
 
-        // Hitung ulang kembalian
-        $change_amount = $request->paid_amount - $sale->total_amount;
+        DB::transaction(function () use ($sale, $request, $newTotal) {
+            // 1. Update Waktu Transaksi
+            $sale->sold_at = $request->created_at;
+            $sale->created_at = $request->created_at;
 
-        $sale->update([
-            'payment_method' => $request->payment_method,
-            'paid_amount'    => $request->paid_amount,
-            'change_amount'  => $change_amount,
-            'note'           => $request->note,
-        ]);
+            // 2. Update Harga Item (PENTING AGAR DASHBOARD & LAPORAN BERUBAH)
+            if ($sale->items->isNotEmpty()) {
+                $item = $sale->items->first();
+                $item->subtotal = $newTotal;
+                
+                // Update harga satuan juga agar konsisten (hindari pembagian nol)
+                $qty = max($item->qty, 1);
+                $item->unit_price = $newTotal / $qty;
+                
+                $item->save();
+            }
 
-        return redirect()->route('pos.index')->with('success', 'Data transaksi berhasil diperbarui.');
+            // 3. Update Header Sales
+            $sale->total = $newTotal; 
+            
+            // 4. Update Pembayaran & Kembalian
+            $sale->payment_method = $request->payment_method;
+            $sale->paid_amount    = $request->paid_amount;
+            $sale->change_amount  = $request->paid_amount - $newTotal;
+            $sale->note           = $request->note;
+
+            $sale->save();
+
+            // 5. SINKRONISASI KE SESSION (PERBAIKAN UTAMA)
+            // Cari sesi yang terhubung dengan ID penjualan ini, lalu update kolom 'bill'
+            DB::table('sessions')
+                ->where('sale_id', $sale->id)
+                ->update(['bill' => $newTotal]);
+        });
+
+        return back()->with('success', 'Data transaksi berhasil diperbarui (Waktu & Harga).');
     }
 
-    /**
-     * Menghapus transaksi dan MENGEMBALIKAN STOK (Restock).
-     */
     public function destroy($id)
     {
-        // Gunakan DB Transaction agar jika gagal di tengah, data tidak rusak
         DB::transaction(function () use ($id) {
             $sale = Sale::findOrFail($id);
-
-            // 1. Ambil semua item dari transaksi ini
             $items = DB::table('sale_items')->where('sale_id', $sale->id)->get();
 
-            // 2. Kembalikan stok untuk setiap produk
             foreach ($items as $item) {
                 if ($item->product_id) {
-                    // Increment stok produk
                     Product::where('id', $item->product_id)
                         ->increment('stock', $item->qty);
                 }
             }
 
-            // 3. Hapus Item Penjualan
             DB::table('sale_items')->where('sale_id', $sale->id)->delete();
-
-            // 4. Hapus Header Penjualan
             $sale->delete();
         });
 
-        return redirect()->route('pos.index')->with('success', 'Transaksi dihapus dan stok produk telah dikembalikan.');
+        return back()->with('success', 'Transaksi dihapus dan stok dikembalikan.');
     }
 }
