@@ -89,7 +89,6 @@
             @forelse($sales as $s)
               <tr>
                 <td>{{ \Carbon\Carbon::parse($s->sold_at)->format('d-m H:i') }}</td>
-                {{-- PERUBAHAN DISINI: Menampilkan display_note yang berisi nama produk --}}
                 <td>{{ $s->display_note }}</td>
                 <td class="text-end">Rp {{ number_format($s->total ?? 0,0,',','.') }}</td>
                 <td class="text-end d-print-none">
@@ -329,7 +328,9 @@ function editSale(id, note, method, paid, total) {
 
   const f = document.createElement('form');
   f.method = 'post';
-  f.action = '/sales/' + id + '/update';
+  // PERBAIKAN URL DISINI: Hapus '/update' karena route di web.php adalah '/sales/{id}' (PUT)
+  f.action = '/sales/' + id;
+  
   // csrf (Laravel requires CSRF token, assuming meta tag exists or we append hidden input)
   const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
   if(token) {

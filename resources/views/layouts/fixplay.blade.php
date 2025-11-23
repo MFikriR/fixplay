@@ -87,7 +87,13 @@
       </button>
       <div class="title">@yield('page_title')</div>
 
-      <div class="ms-auto">
+      <div class="ms-auto d-flex align-items-center gap-2">
+        {{-- TOMBOL RIWAYAT BARU --}}
+        <button id="historyBtn" class="btn btn-outline-dark" type="button" title="Riwayat Notifikasi">
+          <i class="bi bi-clock-history"></i>
+        </button>
+
+        {{-- DROPDOWN NOTIFIKASI --}}
         <div class="dropdown">
           <button id="notifBtn" class="btn btn-outline-dark position-relative" type="button"
                   data-bs-toggle="dropdown" aria-expanded="false" title="Notifikasi">
@@ -113,13 +119,50 @@
   </main>
 </div>
 
+<!-- --- TOAST & AUDIO (Dari Request Sebelumnya) --- -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3 d-print-none" style="z-index: 1090;">
+  <div id="liveToast" class="toast align-items-center text-white bg-primary border-0 shadow-lg" role="alert" aria-live="assertive" aria-atomic="true">
+    <div class="d-flex">
+      <div class="toast-body">
+        <strong class="d-block mb-1" id="toastTitle">Notifikasi</strong>
+        <span id="toastBody">Pesan notifikasi...</span>
+      </div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>
+  </div>
+</div>
+<audio id="notifSound" src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" preload="auto"></audio>
+
+<!-- --- MODAL RIWAYAT BARU --- -->
+<div class="modal fade" id="historyModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold">
+          <i class="bi bi-clock-history me-2"></i> Riwayat Notifikasi
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-0">
+        <div id="historyList" class="list-group list-group-flush">
+          {{-- List riwayat akan di-render di sini oleh JS --}}
+        </div>
+      </div>
+      <div class="modal-footer justify-content-between">
+        <button type="button" class="btn btn-outline-danger btn-sm" id="clearHistoryBtn">Hapus Semua Riwayat</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Tutup</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Bootstrap JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
-{{-- Persist toggle sidebar + notifikasi global + dialog konfirmasi --}}
+{{-- Script Utama (Notifikasi, Riwayat, Sidebar) --}}
 <script>
 (function(){
-  // Sidebar persist
+  // 1. Sidebar persist
   const KEY_SIDEBAR='fixplay.sidebar.collapsed';
   const root=document.querySelector('.fix-shell');
   const btn=document.getElementById('sidebarToggle');
@@ -127,38 +170,163 @@
   apply(localStorage.getItem(KEY_SIDEBAR)==='1');
   btn?.addEventListener('click',()=>{ const next=!root.classList.contains('sidebar-collapsed'); apply(next); localStorage.setItem(KEY_SIDEBAR,next?'1':'0'); });
 
-  // Notifikasi
-  const KEY_TIMERS='fixplay.rental.timers', KEY_INBOX='fixplay.rental.inbox', POLL_MS=15000;
+  // 2. Notifikasi & Riwayat
+  const KEY_TIMERS='fixplay.rental.timers';
+  const KEY_INBOX='fixplay.rental.inbox';
+  const KEY_HISTORY='fixplay.rental.history'; // Key baru untuk riwayat
+  const POLL_MS=15000;
+
+  // Element references
   const notifBadge=document.getElementById('notifBadge'), notifList=document.getElementById('notifList'), clearBtn=document.getElementById('notifClear');
+  const historyBtn=document.getElementById('historyBtn'), historyList=document.getElementById('historyList'), clearHistBtn=document.getElementById('clearHistoryBtn');
+  const toastEl = document.getElementById('liveToast'), toastTitle = document.getElementById('toastTitle'), toastBody = document.getElementById('toastBody');
+  const notifSound = document.getElementById('notifSound');
+  
+  const bsToast = toastEl ? new bootstrap.Toast(toastEl) : null;
+  const historyModal = document.getElementById('historyModal') ? new bootstrap.Modal(document.getElementById('historyModal')) : null;
+
   const jget=(k,d)=>{try{const v=localStorage.getItem(k);return v===null?d:JSON.parse(v)}catch(e){return d}};
   const jset=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
+
+  // --- Fungsi Inbox (Notifikasi Aktif) ---
   function renderInbox(){
     const inbox=jget(KEY_INBOX,[]);
-    if(notifBadge){ if(inbox.length){notifBadge.textContent=String(inbox.length);notifBadge.classList.remove('d-none');}else notifBadge.classList.add('d-none'); }
+    if(notifBadge){ 
+        if(inbox.length){
+            notifBadge.textContent=String(inbox.length);
+            notifBadge.classList.remove('d-none');
+        }else{
+            notifBadge.classList.add('d-none'); 
+        }
+    }
     if(!notifList) return;
     notifList.innerHTML='';
     if(!inbox.length){ notifList.innerHTML='<div class="p-3 text-muted">Belum ada notifikasi.</div>'; return; }
+    
+    // Render inbox items
     inbox.slice().reverse().forEach(it=>{
-      const a=document.createElement('a'); a.href='#'; a.className='list-group-item list-group-item-action'; a.dataset.id=it.id;
+      const a=document.createElement('a'); a.href='#'; a.className='list-group-item list-group-item-action';
       a.innerHTML=`<div class="d-flex w-100 justify-content-between"><div><strong>${it.title}</strong></div><small class="small">${new Date(it.time).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})}</small></div>${it.detail?`<div class="small mt-1">${it.detail}</div>`:''}`;
-      a.addEventListener('click',e=>{e.preventDefault();const cur=jget(KEY_INBOX,[]);const idx=cur.findIndex(x=>String(x.id)===String(it.id)); if(idx>=0){cur.splice(idx,1); jset(KEY_INBOX,cur); renderInbox();}});
+      
+      // Klik item -> Pindahkan ke Riwayat
+      a.addEventListener('click',e=>{
+          e.preventDefault();
+          moveToHistory(it);
+      });
       notifList.appendChild(a);
     });
   }
-  function addNotification(title,detail){ const inbox=jget(KEY_INBOX,[]); inbox.push({id:Date.now()+'-'+Math.random().toString(36).slice(2),title,detail,time:new Date().toISOString()}); jset(KEY_INBOX,inbox); renderInbox(); }
+
+  function addNotification(title, detail){ 
+    const inbox=jget(KEY_INBOX,[]); 
+    inbox.push({id:Date.now()+'-'+Math.random().toString(36).slice(2),title,detail,time:new Date().toISOString()}); 
+    jset(KEY_INBOX,inbox); 
+    renderInbox(); 
+    
+    try { if(notifSound) { notifSound.currentTime = 0; notifSound.play().catch(()=>{}); } } catch(e){}
+    if(bsToast && toastTitle && toastBody) { toastTitle.textContent = title; toastBody.textContent = detail; bsToast.show(); }
+  }
+
+  // --- Fungsi Riwayat ---
+  function moveToHistory(item){
+      // 1. Hapus dari inbox
+      const inbox = jget(KEY_INBOX, []);
+      const newInbox = inbox.filter(x => String(x.id) !== String(item.id));
+      jset(KEY_INBOX, newInbox);
+
+      // 2. Tambah ke history
+      addToHistoryStorage(item);
+      
+      // 3. Refresh tampilan
+      renderInbox();
+  }
+
+  function addToHistoryStorage(item){
+      const hist = jget(KEY_HISTORY, []);
+      hist.unshift(item); // Tambah ke paling atas
+      if(hist.length > 100) hist.length = 100; // Batasi 100 item terakhir
+      jset(KEY_HISTORY, hist);
+  }
+
+  function renderHistory(){
+      const hist = jget(KEY_HISTORY, []);
+      if(!historyList) return;
+      historyList.innerHTML = '';
+      
+      if(!hist.length){
+          historyList.innerHTML = '<div class="p-4 text-center text-muted">Belum ada riwayat.</div>';
+          return;
+      }
+
+      hist.forEach(it => {
+          const d = new Date(it.time);
+          const dateStr = d.toLocaleDateString('id-ID', {day:'numeric', month:'short'});
+          const timeStr = d.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'});
+
+          const div = document.createElement('div');
+          div.className = 'list-group-item';
+          div.innerHTML = `
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="fw-bold text-dark">${it.title}</div>
+                <small class="text-muted" style="font-size:0.75rem;">${dateStr} ${timeStr}</small>
+            </div>
+            ${it.detail ? `<div class="small text-muted mt-1">${it.detail}</div>` : ''}
+          `;
+          historyList.appendChild(div);
+      });
+  }
+
+  // --- Polling Timer ---
   function pollTimers(){
     const now=new Date(); const timers=jget(KEY_TIMERS,[]); let changed=false;
-    timers.forEach(t=>{ const endAt=new Date(t.endAt); if(!t.notified && endAt<=now){ addNotification('Waktu rental habis',`Unit ${t.unit} telah melewati waktu selesai.`); t.notified=true; changed=true; }});
-    const keep=timers.filter(t=>(Date.now()-new Date(t.endAt))<24*3600*1000); if(changed||keep.length!==timers.length) jset(KEY_TIMERS,keep);
+    timers.forEach(t=>{ 
+        const endAt=new Date(t.endAt); 
+        if(!t.notified && endAt<=now){ 
+            addNotification('Waktu Habis!', `Unit ${t.unit} telah selesai.`); 
+            t.notified=true; 
+            changed=true; 
+        }
+    });
+    const keep=timers.filter(t=>(Date.now()-new Date(t.endAt))<24*3600*1000); 
+    if(changed||keep.length!==timers.length) jset(KEY_TIMERS,keep);
   }
-  clearBtn?.addEventListener('click',e=>{e.preventDefault(); jset(KEY_INBOX,[]); renderInbox();});
-  window.addEventListener('storage',e=>{ if(e.key===KEY_INBOX||e.key===KEY_TIMERS) renderInbox(); });
+
+  // --- Event Listeners ---
+  // 1. Tombol "Tandai sudah dibaca" -> Pindahkan semua ke riwayat
+  clearBtn?.addEventListener('click',e=>{
+      e.preventDefault(); 
+      const inbox = jget(KEY_INBOX,[]);
+      if(inbox.length > 0){
+          const hist = jget(KEY_HISTORY, []);
+          const newHist = [...inbox.reverse(), ...hist].slice(0, 100);
+          jset(KEY_HISTORY, newHist);
+          jset(KEY_INBOX,[]); 
+          renderInbox();
+      }
+  });
+
+  // 2. Tombol Buka Riwayat
+  historyBtn?.addEventListener('click', ()=>{
+      renderHistory();
+      historyModal?.show();
+  });
+
+  // 3. Tombol Hapus Riwayat (Permanen)
+  clearHistBtn?.addEventListener('click', ()=>{
+      if(confirm('Yakin ingin menghapus semua riwayat notifikasi?')){
+          jset(KEY_HISTORY, []);
+          renderHistory();
+      }
+  });
+
+  window.addEventListener('storage',e=>{ if([KEY_INBOX, KEY_TIMERS, KEY_HISTORY].includes(e.key)) { renderInbox(); renderHistory(); } });
   document.addEventListener('visibilitychange',()=>{ if(!document.hidden){ renderInbox(); pollTimers(); }});
+  
   renderInbox(); pollTimers(); setInterval(pollTimers,POLL_MS);
 })();
 </script>
 
-<!-- Modal konfirmasi global -->
+<!-- Modal konfirmasi global (Tetap sama) -->
 <div class="modal fade" id="fxConfirm" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content fx-neon-card">

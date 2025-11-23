@@ -168,7 +168,11 @@ class POSController extends Controller
                 }, $items),
             ];
 
-            return view('sales.receipt', compact('sale'));
+            // PERBAIKAN: Kirim parameter 'backUrl' agar tombol kembali mengarah ke POS
+            return view('sales.receipt', [
+                'sale' => $sale,
+                'backUrl' => route('pos.index') 
+            ]);
 
         } catch (\Throwable $e) {
             DB::rollBack();

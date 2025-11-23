@@ -23,9 +23,20 @@ class SaleController extends Controller
             ->select('sale_items.*', 'products.name as product_name')
             ->get();
 
+        // --- PERBAIKAN: LOGIKA TOMBOL KEMBALI DINAMIS ---
+        // Ambil URL sebelumnya
+        $backUrl = url()->previous();
+        
+        // Jika URL sebelumnya sama dengan URL saat ini (misal karena refresh),
+        // atau jika URL sebelumnya kosong, arahkan default ke Dashboard.
+        if ($backUrl == url()->current() || empty($backUrl)) {
+            $backUrl = route('dashboard');
+        }
+
         return view('sales.receipt', [
             'sale' => $sale,
-            'items' => $items
+            'items' => $items,
+            'backUrl' => $backUrl // Kirim variabel ini ke View
         ]);
     }
 
